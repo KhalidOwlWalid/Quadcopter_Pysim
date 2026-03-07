@@ -1,8 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import typing
+import matplotlib.pyplot as plt
 
-filename = "datasets/PER3_10x45MR.dat"
+filename = "propellers/datasets/PER3_10x45MR.dat"
 
 class PropellerInfo():
 
@@ -13,19 +14,56 @@ class PropellerInfo():
         self._df = open(self._dat_filepath, "r")
         
         self._df = self._df.read().splitlines()
-
-        for i, data in enumerate(self._df):
-            if data.isspace():
-                del self._df[i]
-
         self._df = np.array(self._df)
+        # Clean the dataset from whitespaces
+        self._df = self._df[np.char.strip(self._df) != '']
 
-        for i, rpm_info_idx in enumerate(self._find_prop_header()):
-            # So far, the number of lines for each prop rpm dataset is 15
-            self._process_dataset(rpm_info_idx, 15)
+        self.field_keyword_str = {
+            "vel_mph": "",
+            "adv_ratio": "",
+            "pe": "",
+            "ct": "",
+            "cp": "",
+            "pwr_hp": "",
+            "torque_inlbf": "",
+            "thrust_lbf": "",
+            "pwr_w": "",
+            "torque_nm": "",
+            "thrust_n": "",
+            "thr_pwr": "",
+            "mach": "",
+            "reyn": "",
+            "fom": "",
+        }
+
+        prop_header_idx = self._find_prop_header()
+        for i, rpm_info_idx in enumerate(prop_header_idx):
+            # If this is the last prop rpm dataset, then to get the full dataset line number, substract with the total number of lines
+            if i == (len(prop_header_idx) - 1):
+                self._process_dataset(rpm_info_idx, (len(self._df) - prop_header_idx[i]))
+            else:
+                self._process_dataset(rpm_info_idx, (prop_header_idx[i + 1] - prop_header_idx[i]))
 
     def request_data(self, prop_rpm: int, key: str):
         return self._prop_info[prop_rpm][key]
+
+    def request_all_data_header(self):
+        # Use on of the prop rpm for getting all of the header keys
+        # This should be the same for every prop rpm
+        return self._prop_info[1000].keys()
+
+    def print_all_data_header(self) -> None:
+        for i, header in enumerate(self.request_all_data_header()):
+            print(f"Header {i}: {header}")
+
+    def plot_thrust_vs_prop_rpm(self, wind_vel: float) -> None:
+        """_summary_
+
+        Args:
+            wind_vel (float): _description_
+        """
+        for i, prop_rpm in enumerate(self._prop_info.keys()):
+            pass
 
     def _find_prop_header(self):
         prop_rpm_header_loc = np.strings.find(self._df, "PROP RPM")
@@ -44,19 +82,31 @@ class PropellerInfo():
 
         self._prop_info[prop_rpm_header] = {}
 
-        for i, header_info in enumerate(prop_rpm_segment[1].split()):
-            self._prop_info[prop_rpm_header][header_info] = np.array([])
+        prop_data = np.array(prop_rpm_segment[1].split())
+        prop_data_unit = np.array(prop_rpm_segment[2].split())
 
+        prop_data = prop_data + ":" + prop_data_unit
+
+        all_field_keyword_keys = list(self.field_keyword_str.keys())
+        for i, header_info in enumerate(prop_data):
+            self.field_keyword_str[all_field_keyword_keys[i]] = header_info
+            self._prop_info[prop_rpm_header][header_info] = np.array([])
 
         clean_dataset = list()
         for curr_idx in range(3, len(prop_rpm_segment), 1):
+            curr_prop_rpm_seg = prop_rpm_segment[curr_idx].split()
+
+            if (len(curr_prop_rpm_seg) != len(prop_data)):
+                continue
+
             clean_dataset.append(prop_rpm_segment[curr_idx].split())
 
         final_dataset = np.array(clean_dataset)
 
         for i, header_info in enumerate(self._prop_info[prop_rpm_header].keys()):
-            self._prop_info[prop_rpm_header][header_info] = final_dataset[:, i] 
-
+            self._prop_info[prop_rpm_header][header_info] = final_dataset[:, i].astype(float, copy=False)
 
 if __name__ == "__main__":
     data = PropellerInfo(filename)
+
+    # print(data.request_data(1000, data.vel_mph_str))
