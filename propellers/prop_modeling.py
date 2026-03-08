@@ -36,6 +36,17 @@ class PropellerInfo():
             "fom": "",
         }
 
+        # TODO: Allow the user to change this
+        self._lambda = 0.75
+        self._zeta = 0.55
+        self._Bp = 2
+        self._K0 = 6.11
+        self._epsilon = 0.85
+        self._Hp = 4.5 * 0.0254
+        self._Dp = 10 * 0.0254
+        self._alpha0 = 0
+        self._A = 5
+
         prop_header_idx = self._find_prop_header()
         for i, rpm_info_idx in enumerate(prop_header_idx):
             # If this is the last prop rpm dataset, then to get the full dataset line number, substract with the total number of lines
@@ -43,6 +54,9 @@ class PropellerInfo():
                 self._process_dataset(rpm_info_idx, (len(self._df) - prop_header_idx[i]))
             else:
                 self._process_dataset(rpm_info_idx, (prop_header_idx[i + 1] - prop_header_idx[i]))
+
+    def convert_inch_to_m(self, val_inch: float) -> float:
+        return val_inch * 0.0254
 
     def get_all_available_prop_rpm(self):
         return self._prop_info.keys()
@@ -69,15 +83,15 @@ class PropellerInfo():
             wind_vel (float): _description_
         """
         field_interp_dataset = list()
-        for i, prop_rpm in enumerate(data.get_all_available_prop_rpm()):
-            vel_data = data.request_data(prop_rpm, "vel_mph")
+        for i, prop_rpm in enumerate(prop_10x45.get_all_available_prop_rpm()):
+            vel_data = prop_10x45.request_data(prop_rpm, "vel_mph")
             idx = np.searchsorted(vel_data, wind_vel_mph)
 
             if (idx >= len(vel_data)):
                 idx = len(vel_data) - 1
 
             idx_range = np.array([idx - 1, idx])
-            field_data = data.request_data(prop_rpm, field_keyword)[idx_range]
+            field_data = prop_10x45.request_data(prop_rpm, field_keyword)[idx_range]
             field_interp = np.interp(wind_vel_mph, vel_data[idx_range], field_data)
             field_interp_dataset.append(field_interp)
         
@@ -126,37 +140,37 @@ class PropellerInfo():
         for i, header_info in enumerate(self._prop_info[prop_rpm_header].keys()):
             self._prop_info[prop_rpm_header][header_info] = final_dataset[:, i].astype(float, copy=False)
 
+    # TODO (Khalid): Create a class that could solve for the coefficient for the theoretical thrust?
+    def calculate_ct(self):
+        Ct1 = 0.25 * np.power(np.pi, 3) * self._lambda * np.power(self._zeta, 2) * self._Bp * self._K0
+        Ct2 = (self._epsilon * np.arctan(self._Hp / (np.pi * self._Dp)) - self._alpha0) / (np.pi * self._A + self._K0)
+        Ct = Ct1 * Ct2
+        return Ct
+
+    def calculate_theoretical_thrust(self, prop_rpm_range):
+        rho = 1.225 # kg/m3
+        Ct = self.calculate_ct()
+        thrust_theoretical = Ct * rho * np.power(prop_rpm_range/60, 2) * np.power(self._Dp, 4)
+        return thrust_theoretical
+
 if __name__ == "__main__":
-    data = PropellerInfo(filename)
+    prop_10x45 = PropellerInfo(filename)
 
     ws_list = np.arange(1.0, 10.0, 1.0)
 
     for i, wind_speed in enumerate(ws_list):
-        thrust_interp = data.get_field_data_vs_prop_rpm("thrust_n", wind_speed)
-        plt.plot(data.get_all_available_prop_rpm(), thrust_interp, label=f"{wind_speed} mph")
-
-    lambda_ = 0.75
-    zeta = 0.55
-    Bp = 2
-    K0 = 6.11
-    epsilon = 0.85
-    Hp = 4.5 * 0.0254
-    Dp = 10 * 0.0254
-    alpha0 = 0
-    A = 5
-
-    Ct1 = 0.25 * np.power(np.pi, 3) * lambda_ * np.power(zeta, 2) * Bp * K0
-    Ct2 = (epsilon * np.arctan(Hp / (np.pi * Dp)) - alpha0) / (np.pi * A + K0)
-    Ct = Ct1 * Ct2
+        thrust_interp = prop_10x45.get_field_data_vs_prop_rpm("thrust_n", wind_speed)
+        plt.plot(prop_10x45.get_all_available_prop_rpm(), thrust_interp, label=f"{wind_speed} mph")
 
     rho = 1.225 # kg/m3
-    thrust_theoretical = Ct * rho * np.power(np.array(list(data.get_all_available_prop_rpm()))/60, 2) * np.power(Dp, 4)
-    plt.plot(data.get_all_available_prop_rpm(), thrust_theoretical, marker='o', linestyle='dashed', color='black')
+    prop_rpm_range = np.linspace(0, 20000, 10)
+    thrust_theoretical = prop_10x45.calculate_theoretical_thrust(prop_rpm_range)
+    plt.plot(prop_rpm_range, thrust_theoretical, marker='o', linestyle='dashed', color='black')
 
     plt.xlabel("Propeller speed (rpm)")
     plt.ylabel("Thrust (N)")
     plt.ylim((0, 100))
-    plt.xlim((2000, 20000))
+    plt.xlim((0, 20000))
     plt.legend()
     plt.grid()
     plt.show()
