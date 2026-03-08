@@ -44,19 +44,23 @@ class PropellerInfo():
             else:
                 self._process_dataset(rpm_info_idx, (prop_header_idx[i + 1] - prop_header_idx[i]))
 
+    def get_all_available_prop_rpm(self):
+        return self._prop_info.keys()
+
     def request_data(self, prop_rpm: int, key: str):
-        return self._prop_info[prop_rpm][key]
+        header_str = self.field_keyword_str[key]
+        return self._prop_info[prop_rpm][header_str]
 
     def request_all_data_header(self):
         # Use on of the prop rpm for getting all of the header keys
         # This should be the same for every prop rpm
-        return self._prop_info[1000].keys()
+        return list(self.field_keyword_str.values())
 
     def print_all_data_header(self) -> None:
-        for i, header in enumerate(self.request_all_data_header()):
-            print(f"Header {i}: {header}")
+        for keyword, header in self.field_keyword_str.items():
+            print(f"{keyword}: {header}")
 
-    def plot_thrust_vs_prop_rpm(self, wind_vel: float) -> None:
+    def plot_thrust_vs_prop_rpm(self, wind_vel_mph: float) -> None:
         """_summary_
 
         Args:
@@ -64,6 +68,7 @@ class PropellerInfo():
         """
         for i, prop_rpm in enumerate(self._prop_info.keys()):
             pass
+
 
     def _find_prop_header(self):
         prop_rpm_header_loc = np.strings.find(self._df, "PROP RPM")
@@ -108,5 +113,34 @@ class PropellerInfo():
 
 if __name__ == "__main__":
     data = PropellerInfo(filename)
+    # data.plot_thrust_vs_prop_rpm(0.38)
+    # fig, ax = plt.figure()
 
-    # print(data.request_data(1000, data.vel_mph_str))
+    wind_speed = 0.38
+    thrust_interp_dataset = list()
+    torque_interp_dataset = list()
+    for i, prop_rpm in enumerate(data.get_all_available_prop_rpm()):
+        vel_data = data.request_data(prop_rpm, "vel_mph")
+        wind_speed = 11.0
+        idx = np.searchsorted(vel_data, wind_speed)
+
+        if (idx >= len(vel_data)):
+            idx = len(vel_data) - 1
+
+        idx_range = np.array([idx - 1, idx])
+        thrust_data = data.request_data(prop_rpm, "thrust_n")[idx_range]
+        torque_data = data.request_data(prop_rpm, "torque_nm")[idx_range]
+        thrust_interp = np.interp(wind_speed, vel_data[idx_range], thrust_data)
+        torque_interp = np.interp(wind_speed, vel_data[idx_range], torque_data)
+        thrust_interp_dataset.append(thrust_interp)
+        torque_interp_dataset.append(torque_interp)
+    
+    thrust_interp_dataset = np.array(thrust_interp_dataset)
+    torque_interp_dataset = np.array(torque_interp_dataset)
+
+    plt.plot(data.get_all_available_prop_rpm(), thrust_interp_dataset, label=f"{wind_speed} mph")
+    plt.xlabel("Propeller speed (rpm)")
+    plt.ylabel("Thrust (N)")
+    plt.legend()
+    plt.grid()
+    plt.show()
