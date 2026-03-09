@@ -3,8 +3,6 @@ import numpy as np
 import typing
 import matplotlib.pyplot as plt
 
-filename = "propellers/datasets/PER3_10x45MR.dat"
-
 class PropellerInfo():
 
     def __init__(self, dat_file):
@@ -46,6 +44,8 @@ class PropellerInfo():
         self._Dp = 10 * 0.0254
         self._alpha0 = 0
         self._A = 5
+        self._Cfd = 0.015
+        self._e = 0.83
 
         prop_header_idx = self._find_prop_header()
         for i, rpm_info_idx in enumerate(prop_header_idx):
@@ -147,30 +147,52 @@ class PropellerInfo():
         Ct = Ct1 * Ct2
         return Ct
 
+    def calculate_cm(self):
+        Cd1 = (np.pi * self._A * np.power(self._K0, 2)) / (self._e)
+        Cd2 = np.power(self._epsilon * np.arctan((self._Hp)/(np.pi * self._Dp)) - self._alpha0, 2)
+        Cd3 = np.power((np.pi * self._A + self._K0), 2)
+        Cd = self._Cfd + Cd1 * Cd2 / Cd3
+        Cm = (1/(8*self._A)) * np.power(np.pi, 2) * Cd * np.power(self._zeta, 2) * self._lambda * np.power(self._Bp, 2)
+        return Cm
+
     def calculate_theoretical_thrust(self, prop_rpm_range):
         rho = 1.225 # kg/m3
         Ct = self.calculate_ct()
         thrust_theoretical = Ct * rho * np.power(prop_rpm_range/60, 2) * np.power(self._Dp, 4)
         return thrust_theoretical
 
+    def calculate_theoretical_torque(self, prop_rpm_range):
+        rho = 1.225 # kg/m3
+        Cm = self.calculate_cm()
+        torque_theoretical = Cm * rho * np.power((prop_rpm_range / 60), 2) * np.power(self._Dp, 5)
+        return torque_theoretical
+
 if __name__ == "__main__":
+
+    filename = "propellers/datasets/PER3_10x45MR.dat"
     prop_10x45 = PropellerInfo(filename)
 
     ws_list = np.arange(1.0, 10.0, 1.0)
 
     for i, wind_speed in enumerate(ws_list):
-        thrust_interp = prop_10x45.get_field_data_vs_prop_rpm("thrust_n", wind_speed)
-        plt.plot(prop_10x45.get_all_available_prop_rpm(), thrust_interp, label=f"{wind_speed} mph")
+        # thrust_interp = prop_10x45.get_field_data_vs_prop_rpm("thrust_n", wind_speed)
+        # plt.plot(prop_10x45.get_all_available_prop_rpm(), thrust_interp, label=f"{wind_speed} mph")
+        torque_interp = prop_10x45.get_field_data_vs_prop_rpm("torque_nm", wind_speed)
+        plt.plot(prop_10x45.get_all_available_prop_rpm(), torque_interp, label=f"{wind_speed} mph")
 
     rho = 1.225 # kg/m3
     prop_rpm_range = np.linspace(0, 20000, 10)
-    thrust_theoretical = prop_10x45.calculate_theoretical_thrust(prop_rpm_range)
-    plt.plot(prop_rpm_range, thrust_theoretical, marker='o', linestyle='dashed', color='black')
+    # thrust_theoretical = prop_10x45.calculate_theoretical_thrust(prop_rpm_range)
+    # plt.plot(prop_rpm_range, thrust_theoretical, marker='o', linestyle='dashed', color='black')
+
+    torque_theoretical = prop_10x45.calculate_theoretical_torque(prop_rpm_range)
+    print(torque_theoretical)
+    plt.plot(prop_rpm_range, torque_theoretical, marker='o', linestyle='dashed', color='black')
 
     plt.xlabel("Propeller speed (rpm)")
-    plt.ylabel("Thrust (N)")
-    plt.ylim((0, 100))
-    plt.xlim((0, 20000))
+    plt.ylabel("Torque (Nm)")
+    # plt.ylim((0, 30))
+    # plt.xlim((2000, 12000))
     plt.legend()
     plt.grid()
     plt.show()
